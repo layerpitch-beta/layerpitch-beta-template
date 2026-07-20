@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title data-i18n="pageTitle">Test gameplay — LayerPitch</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #111; overflow: hidden; }
+  #player-wrap, #yt-target { position: fixed; inset: 0; width: 100%; height: 100%; }
+  #player-wrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+  #error-box {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px; color: #eee; font-family: system-ui, sans-serif;
+    padding: 24px; text-align: center; background: #111;
+  }
+  #error-box.visible { display: flex; }
+  #error-box .msg { font-size: 15px; }
+  #error-box .hint { font-size: 13px; color: #999; max-width: 360px; }
+  #sound-toggle-btn {
+    position: fixed; bottom: 18px; right: 18px; z-index: 10;
+    width: 46px; height: 46px; border-radius: 50%; border: none;
+    background: rgba(20, 20, 20, 0.72); color: #fff; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    font-size: 20px; line-height: 1; backdrop-filter: blur(4px);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.4); transition: background 0.15s ease, transform 0.1s ease;
+  }
+  #sound-toggle-btn.visible { display: flex; }
+  #sound-toggle-btn:hover { background: rgba(20, 20, 20, 0.88); }
+  #sound-toggle-btn:active { transform: scale(0.94); }
+</style>
+</head>
+<body>
+<div id="player-wrap"><div id="yt-target"></div></div>
+<button id="sound-toggle-btn" type="button" aria-label="">🔇</button>
+<div id="error-box">
+  <div class="msg" data-i18n="errorMsg">Impossible de charger cette vidéo ici.</div>
+  <div class="hint" data-i18n="errorHint">Vérifie qu'elle est publique et intégrable (pas restreinte "propriétaire uniquement" côté YouTube, ou "à mots de passe" côté Vimeo).</div>
+</div>
+<script src="layerpitch-i18n.js"></script>
+<script>
+// Fenêtre transitoire (ouverte par pack.html) : pas d'interrupteur de langue ici, on hérite simplement
+// de la langue transmise par pack.html via l'URL. Dictionnaire dans layerpitch-i18n.js (zone "videoTest").
+// Langue transmise par pack.html (paramètre ?lang=) — même AdReel, même langue, jamais de choix ici.
+function currentLang() { return new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'fr'; }
+function videoTestDict() {
+  const I18N = window.LAYERPITCH_I18N || { fr: { videoTest: {} }, en: { videoTest: {} } };
+  const dict = (I18N[currentLang()] || I18N.fr).videoTest || {};
+  const dictFr = (I18N.fr || {}).videoTest || {};
+  return { dict, dictFr };
+}
+function tv(key) {
+  const { dict, dictFr } = videoTestDict();
+  return dict[key] || dictFr[key] || key;
+}
+function applyI18n() {
+  const { dict, dictFr } = videoTestDict();
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    const v = dict[key] || dictFr[key];
+    if (v) el.textContent = v;
+  });
+}
+applyI18n();
+
+function showError() {
+  document.getElementById('player-wrap').style.display = 'none';
+  document.getElementById('error-box').classList.add('visible');
+  soundBtn.classList.remove('visible');
+}
+
+// Bouton son : la vidéo s'ouvre toujours coupée par défaut (le morceau LayerPitch ne doit pas être
+// parasité par l'audio de la vidéo au premier affichage), mais si la vidéo embarque déjà son propre
+// son/fx, le testeur doit pouvoir le réactiver à la volée pour l'entendre en plus des morceaux.
+let isMuted = true;
+let activePlayerKind = null; // 'youtube' | 'vimeo'
+let ytPlayerRef = null;
+let vimeoPlayerRef = null;
+const soundBtn = document.getElementById('sound-toggle-btn');
+
+function updateSoundBtnUI() {
+  soundBtn.textContent = isMuted ? '🔇' : '🔊';
+  soundBtn.setAttribute('aria-label', isMuted ? tv('unmuteBtn') : tv('muteBtn'));
+  soundBtn.title = isMuted ? tv('unmuteBtn') : tv('muteBtn');
+}
+
+function showSoundBtn() {
+  updateSoundBtnUI();
+  soundBtn.classList.add('visible');
+}
+
+soundBtn.addEventListener('click', function () {
+  if (activePlayerKind === 'youtube' && ytPlayerRef) {
+    if (isMuted) { ytPlayerRef.unMute(); } else { ytPlayerRef.mute(); }
+    isMuted = ytPlayerRef.isMuted();
+    updateSoundBtnUI();
+  } else if (activePlayerKind === 'vimeo' && vimeoPlayerRef) {
+    const next = !isMuted;
+    vimeoPlayerRef.setMuted(next ? true : false).catch(function () {});
+    isMuted = next;
+    updateSoundBtnUI();
+  }
+});
+
+const params = new URLSearchParams(location.search);
+const service = params.get('service');
+const id = params.get('id');
+
+if (!service || !id) {
+  showError();
+} else if (service === 'youtube') {
+  // Filet de sécurité : si l'API ne répond jamais (script bloqué, réseau), on n'attend pas indéfiniment.
+  const safetyTimer = setTimeout(showError, 8000);
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  tag.onerror = showError;
+  document.body.appendChild(tag);
+  window.onYouTubeIframeAPIReady = function () {
+    activePlayerKind = 'youtube';
+    new YT.Player('yt-target', {
+      videoId: id,
+      width: '100%',
+      height: '100%',
+      playerVars: { autoplay: 1, mute: 1, playsinline: 1 },
+      events: {
+        onReady: function (e) {
+          clearTimeout(safetyTimer);
+          ytPlayerRef = e.target;
+          e.target.mute();
+          e.target.playVideo();
+          isMuted = true;
+          showSoundBtn();
+        },
+        onError: function () { clearTimeout(safetyTimer); showError(); }
+      }
+    });
+  };
+} else if (service === 'vimeo') {
+  const safetyTimer = setTimeout(showError, 8000);
+  const tag = document.createElement('script');
+  tag.src = 'https://player.vimeo.com/api/player.js';
+  tag.onerror = showError;
+  tag.onload = function () {
+    activePlayerKind = 'vimeo';
+    document.getElementById('yt-target').outerHTML =
+      '<iframe id="vimeoIframe" src="https://player.vimeo.com/video/' + encodeURIComponent(id) +
+      '?autoplay=1&muted=1&playsinline=1" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>';
+    const iframe = document.getElementById('vimeoIframe');
+    const player = new Vimeo.Player(iframe);
+    vimeoPlayerRef = player;
+    player.setMuted(true).catch(function () {});
+    player.ready().then(function () {
+      clearTimeout(safetyTimer);
+      isMuted = true;
+      showSoundBtn();
+    }).catch(function () { clearTimeout(safetyTimer); showError(); });
+    player.on('error', function () { clearTimeout(safetyTimer); showError(); });
+  };
+  document.body.appendChild(tag);
+} else {
+  showError();
+}
+</script>
+</body>
+</html>
