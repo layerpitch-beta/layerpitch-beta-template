@@ -181,7 +181,7 @@ function buildTrackRow(track, packsForTrack) {
   const hasFiles = supported && (isVerticalRandom
     ? (track.fixedLayers || []).some(layerHasSource)
     : isSequential
-    ? (track.segments || []).some(layerHasSource)
+    ? (track.segmentSlots || []).some(sl => (sl.alternatives || []).some(layerHasSource))
     : layerHasSource(track.layers[0]) && (isStatic || track.layers.every(layerHasSource)));
 
   const wrapper = document.createElement('div');
@@ -338,7 +338,7 @@ function buildTrackRow(track, packsForTrack) {
     <div class="track-row-details" data-role="details">
      <div class="track-row-details-inner">
       <div class="track-desc">${linkify(track.description || '')}</div>
-      ${packsForTrack && packsForTrack.length ? `<div class="pack-link">${packsForTrack.map(p => `<a href="./pack.html?id=${encodeURIComponent(p.id)}">${t('partOfCollection', { title: escapeHtml(p.title) })}</a>`).join('<br>')}</div>` : ''}
+      ${packsForTrack && packsForTrack.length ? `<div class="pack-link">${packsForTrack.map(p => `<a href="./pack.html?id=${encodeURIComponent(p.id)}">${t('partOfPack', { title: escapeHtml(p.title) })}</a>`).join('<br>')}</div>` : ''}
       ${!supported ? `<span class="placeholder-tag">Mode "${track.mode}" pas encore supporté</span>` :
         !hasFiles ? `<span class="placeholder-tag">Fichiers audio manquants</span>` : (
         isSequential ? `
@@ -442,7 +442,7 @@ function initTrackPlayer(track, wrapper) {
   const hasFiles = supported && (isVerticalRandom
     ? (track.fixedLayers || []).some(layerHasSource)
     : isSequential
-    ? (track.segments || []).some(layerHasSource)
+    ? (track.segmentSlots || []).some(sl => (sl.alternatives || []).some(layerHasSource))
     : layerHasSource(track.layers[0]) && (isStatic || track.layers.every(layerHasSource)));
   if (!hasFiles) return;
 
@@ -492,7 +492,7 @@ function initTrackPlayer(track, wrapper) {
   // morceau a un sens ; ambigu pour vertical/vertical-random où plusieurs couches sonnent ensemble).
   const waveformBg = wrapper.querySelector('[data-role="waveformBg"]');
   const waveformFg = wrapper.querySelector('[data-role="waveformFg"]');
-  let waveformPeaks = null;
+  let waveformBuffer = null;
   function cssVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return v || fallback;
@@ -511,7 +511,21 @@ function initTrackPlayer(track, wrapper) {
       }
       peaks[i] = max;
     }
-    return peaks;
+    // Lissage léger (moyenne pondérée avec les deux voisins immédiats) : atténue les barres isolées trop
+    // erratiques d'une frame à l'autre sans aplatir le relief général — le niveau de détail vient du
+    // nombre de barres (voir bucketCountForWidth), pas de la précision brute de chacune.
+    return peaks.map((v, i) => {
+      const prev = i > 0 ? peaks[i - 1] : v;
+      const next = i < peaks.length - 1 ? peaks[i + 1] : v;
+      return v * 0.6 + prev * 0.2 + next * 0.2;
+    });
+  }
+  // Nombre de barres calculé à partir de la largeur réellement affichée plutôt qu'un nombre fixe choisi à
+  // l'aveugle : trop grossier sur un grand format (waveform statique pleine largeur), ou au contraire plus
+  // de barres que de pixels physiques disponibles sur un petit format (nœud du graphe vertical-random).
+  const WAVEFORM_BAR_PITCH_PX = 4; // largeur barre + espace visés, en px CSS
+  function bucketCountForWidth(cssWidthPx) {
+    return Math.max(24, Math.min(320, Math.round(cssWidthPx / WAVEFORM_BAR_PITCH_PX)));
   }
   function drawWaveformCanvas(canvas, peaks, color) {
     if (!canvas || !peaks) return;
@@ -526,17 +540,34 @@ function initTrackPlayer(track, wrapper) {
     c2d.fillStyle = color;
     const barCount = peaks.length;
     const slot = w / barCount;
-    const barWidth = Math.max(1, slot - Math.max(1, Math.round(dpr)));
+    // Barres aérées (pas collées) avec coins arrondis pour un rendu moins anguleux — repli silencieux sur
+    // des rectangles droits si roundRect n'est pas supporté (Safari < 16, très marginal aujourd'hui).
+    const barWidth = Math.max(1, slot * 0.62);
+    const radius = Math.min(barWidth / 2, 2.5 * dpr);
     const mid = h / 2;
     for (let i = 0; i < barCount; i++) {
       const amp = Math.max(0.04, peaks[i]); // hauteur minimale visible même sur un silence
       const barH = Math.max(2 * dpr, amp * h);
-      c2d.fillRect(i * slot, mid - barH / 2, barWidth, barH);
+      const x = i * slot + (slot - barWidth) / 2;
+      const y = mid - barH / 2;
+      if (c2d.roundRect) { c2d.beginPath(); c2d.roundRect(x, y, barWidth, barH, radius); c2d.fill(); }
+      else { c2d.fillRect(x, y, barWidth, barH); }
     }
   }
+  // Point d'entrée commun : mesure la largeur une seule fois (bg/fg partagent la même taille), calcule les
+  // pics une seule fois pour les deux calques plutôt que de dupliquer le travail.
+  function renderWaveformPair(bgCanvas, fgCanvas, buffer, bgColor, fgColor) {
+    if (!buffer) return;
+    const refCanvas = bgCanvas || fgCanvas;
+    if (!refCanvas) return;
+    const cssWidth = refCanvas.getBoundingClientRect().width;
+    if (cssWidth < 2) return;
+    const peaks = computeWaveformPeaks(buffer, bucketCountForWidth(cssWidth));
+    if (bgCanvas) drawWaveformCanvas(bgCanvas, peaks, bgColor);
+    if (fgCanvas) drawWaveformCanvas(fgCanvas, peaks, fgColor);
+  }
   function redrawWaveforms() {
-    drawWaveformCanvas(waveformBg, waveformPeaks, cssVar('--border', '#ccc'));
-    drawWaveformCanvas(waveformFg, waveformPeaks, cssVar('--accent', '#c9713c'));
+    renderWaveformPair(waveformBg, waveformFg, waveformBuffer, cssVar('--border', '#ccc'), cssVar('--accent', '#c9713c'));
   }
   if (waveformBg && waveformFg) {
     // Redessine si le contraste renforcé change (couleurs différentes) ou si le conteneur change de taille
@@ -562,9 +593,7 @@ function initTrackPlayer(track, wrapper) {
   // fond/avant-plan que la waveform du mode statique et les blocs du mode séquentiel.
   function drawVoiceWave(els, buffer) {
     if (!els || !els.bg || !els.fg || !buffer) return;
-    const peaks = computeWaveformPeaks(buffer, 60);
-    drawWaveformCanvas(els.bg, peaks, cssVar('--border', '#ccc'));
-    drawWaveformCanvas(els.fg, peaks, cssVar('--accent', '#c9713c'));
+    renderWaveformPair(els.bg, els.fg, buffer, cssVar('--border', '#ccc'), cssVar('--accent', '#c9713c'));
   }
   // Graphe de nœuds façon Wwise (Voice Graph) pour vertical-random : source -> une voix par couche
   // fixe/groupe -> bus de sortie, reliés par des connecteurs courbes dessinés en SVG. Le nombre de voix
@@ -651,17 +680,27 @@ function initTrackPlayer(track, wrapper) {
   let fixedBuffers = []; // une entrée par couche fixe déclarée (toutes jouent systématiquement, à chaque cycle)
   let rawFixedLayers = []; // couches fixes réellement chargées (avec fichier), même indexation que fixedBuffers — sert à retrouver le bon gain de correction par index dans scheduleGeneration
   let groupBuffers = [];    // groupBuffers[g] = [buffer, buffer, ...] pour chaque alternative jouable du groupe g
-  let lastPickedIndex = []; // lastPickedIndex[g] = index de la dernière alternative tirée pour le groupe g (-1 si aucune encore)
+  // Un groupe peut "dupliquer" (référencer) le pool d'un autre groupe plutôt que de charger deux fois les
+  // mêmes fichiers en mémoire (ex. deux groupes qui doivent varier de façon identique) — groupBuffers[g]
+  // pointe alors directement vers le MÊME tableau que le groupe référencé (pas une copie). L'anti-répétition
+  // est elle aussi partagée entre toutes les occurrences d'un même pool : on la garde donc par identifiant
+  // canonique (l'id du groupe réellement porteur du contenu), pas par index de groupe.
+  let lastPickedIndex = {}; // lastPickedIndex[canonicalGroupId] = index de la dernière alternative tirée pour ce pool
+  function canonicalGroupKey(g) {
+    const group = (track.randomGroups || [])[g];
+    return (group && group.referencesGroupId) || (group && group.id) || ('g' + g);
+  }
   function pickAlternativeIndex(g) {
     const group = (track.randomGroups || [])[g];
     const bufs = groupBuffers[g] || [];
     const n = bufs.length;
     if (n === 0) return -1;
+    const key = canonicalGroupKey(g);
     let idx = Math.floor(Math.random() * n);
     if (group && group.avoidImmediateRepeat && n > 1) {
-      while (idx === lastPickedIndex[g]) idx = Math.floor(Math.random() * n);
+      while (idx === lastPickedIndex[key]) idx = Math.floor(Math.random() * n);
     }
-    lastPickedIndex[g] = idx;
+    lastPickedIndex[key] = idx;
     return idx;
   }
 
@@ -670,8 +709,15 @@ function initTrackPlayer(track, wrapper) {
 
   // Spécifique au mode séquentiel
   let introBuffer = null, outroBuffer = null;
-  let segmentBuffers = []; // aligné sur track.segments
-  let lastSegmentIndex = -1;
+  // slotBuffers[s] = [buffer, buffer, ...] pour chaque alternative jouable de l'emplacement s — même
+  // principe que groupBuffers du vertical-random (y compris la duplication/référence pour économiser la
+  // mémoire, voir canonicalGroupKey ci-dessus), mais ici l'ORDRE des emplacements compte en plus : ils
+  // s'enchaînent dans l'ordre défini par le compositeur (contrairement aux groupes, qui jouent tous
+  // simultanément et n'ont pas de notion d'ordre entre eux).
+  let slotBuffers = [];
+  let lastPickedSlotAltIndex = {}; // lastPickedSlotAltIndex[canonicalSlotId] = index de la dernière alternative tirée pour ce pool — partagé entre tous les emplacements qui dupliquent le même pool (ex. structure AABA : les deux "A" évitent la même dernière alternative jouée)
+  let currentSlotIndex = 0; // position dans le cycle d'emplacements ; boucle sur elle-même (0,1,...,N-1,0,1,...)
+  let currentSlotRepeatsPlayed = 0; // combien de fois l'emplacement courant a déjà rejoué depuis qu'on y est arrivé, pour respecter repeatCount avant de passer au suivant
   let seqSchedulerTimer = null;
   let seqNextStartCtxTime = 0;
   let seqActiveSources = []; // {src, gain} toutes générations confondues (dont queues en train de finir)
@@ -680,15 +726,64 @@ function initTrackPlayer(track, wrapper) {
   let seqTimeouts = [];
   let goToEndRequested = false;
   function blockSeconds(bars) { return (bars || beatsPerBar) * beatsPerBar * secondsPerBeat; }
-  function pickSegmentIndex() {
-    const validIdxs = segmentBuffers.map((b, i) => b ? i : -1).filter(i => i >= 0);
-    if (validIdxs.length === 0) return -1;
-    let idx = validIdxs[Math.floor(Math.random() * validIdxs.length)];
-    if (track.avoidImmediateRepeat && validIdxs.length > 1) {
-      while (idx === lastSegmentIndex) idx = validIdxs[Math.floor(Math.random() * validIdxs.length)];
+  function canonicalSlotKey(s) {
+    const slot = (track.segmentSlots || [])[s];
+    return (slot && slot.referencesSlotId) || (slot && slot.id) || ('s' + s);
+  }
+  // Pour un emplacement qui duplique un autre, ses propres "alternatives" sont vides (le contenu vit chez
+  // la source) — on va chercher le bon libellé là où sont réellement les fichiers, plutôt que d'afficher
+  // seulement le nom générique de l'emplacement.
+  function resolveSlotAlternative(slotIdx, altIdx) {
+    const slot = (track.segmentSlots || [])[slotIdx];
+    if (!slot) return null;
+    if (slot.referencesSlotId) {
+      const source = (track.segmentSlots || []).find(sl => sl.id === slot.referencesSlotId);
+      return (source && source.alternatives || [])[altIdx] || null;
     }
-    lastSegmentIndex = idx;
+    return (slot.alternatives || [])[altIdx] || null;
+  }
+  function pickSlotAlternativeIndex(slotIdx) {
+    const bufs = slotBuffers[slotIdx] || [];
+    const n = bufs.length;
+    if (n === 0) return -1;
+    // L'anti-répétition (case à cocher) est réglée sur l'emplacement "porteur" du contenu quand celui-ci
+    // est dupliqué ailleurs — dupliquer un pool n'a pas sa propre notion d'anti-répétition indépendante,
+    // puisque le pool (et son historique de tirage) est justement partagé.
+    const key = canonicalSlotKey(slotIdx);
+    const sourceSlot = (track.segmentSlots || []).find(sl => sl.id === key) || (track.segmentSlots || [])[slotIdx];
+    let idx = Math.floor(Math.random() * n);
+    if (sourceSlot && sourceSlot.avoidImmediateRepeat && n > 1) {
+      while (idx === lastPickedSlotAltIndex[key]) idx = Math.floor(Math.random() * n);
+    }
+    lastPickedSlotAltIndex[key] = idx;
     return idx;
+  }
+  // Prochain emplacement jouable dans le cycle, en partant de la position courante — saute silencieusement
+  // les emplacements sans aucune alternative chargée (ex. tous les fichiers manquants) plutôt que de casser
+  // la chaîne. Reste sur le même emplacement jusqu'à épuiser son repeatCount (nombre de répétitions avant
+  // de passer au suivant) avant d'avancer dans la chaîne. Renvoie null s'il n'y a strictement aucun
+  // emplacement jouable.
+  function pickNextSegmentSlot() {
+    const slots = track.segmentSlots || [];
+    if (!slots.length) return null;
+    for (let i = 0; i < slots.length; i++) {
+      const slotIdx = currentSlotIndex;
+      const altIdx = pickSlotAlternativeIndex(slotIdx);
+      if (altIdx < 0) {
+        // emplacement totalement vide : on l'ignore, on passe au suivant sans consommer de répétition
+        currentSlotIndex = (currentSlotIndex + 1) % slots.length;
+        currentSlotRepeatsPlayed = 0;
+        continue;
+      }
+      currentSlotRepeatsPlayed++;
+      const repeatCount = Math.max(1, slots[slotIdx].repeatCount || 1);
+      if (currentSlotRepeatsPlayed >= repeatCount) {
+        currentSlotIndex = (currentSlotIndex + 1) % slots.length;
+        currentSlotRepeatsPlayed = 0;
+      }
+      return { slotIdx, altIdx };
+    }
+    return null; // aucun emplacement n'a la moindre alternative chargée
   }
   // Visualisation en blocs (intro / segment en cours / outro), qui se remplissent au rythme de la lecture —
   // demande directe d'un retour compositeur : "montrer un bloc pour le cue de départ qui se remplit en jouant,
@@ -706,14 +801,30 @@ function initTrackPlayer(track, wrapper) {
     segment: { bg: wrapper.querySelector('[data-role="seqWaveBg-segment"]'), fg: wrapper.querySelector('[data-role="seqWaveFg-segment"]') },
     outro: { bg: wrapper.querySelector('[data-role="seqWaveBg-outro"]'), fg: wrapper.querySelector('[data-role="seqWaveFg-outro"]') }
   };
+  // Contrairement au mode statique et vertical-random, ce bloc n'avait jusqu'ici AUCUN redessin au
+  // redimensionnement — le canevas restait figé à la taille capturée lors de son tout premier dessin
+  // (ex. juste avant qu'une transition de layout ne se termine), d'où une forme d'onde qui semblait
+  // "correcte sur une partie, plate ensuite" alors que le son continuait bel et bien. Même principe que
+  // waveformBg/waveformFg (mode statique) et voiceWave* (vertical-random) : on retient le dernier buffer
+  // dessiné par bloc et on redessine dès que le conteneur change de taille.
+  const seqLastBuffers = { intro: null, segment: null, outro: null };
+  const seqBlocksContainer = wrapper.querySelector('.seq-blocks');
+  if (seqBlocksContainer && window.ResizeObserver) {
+    new ResizeObserver(() => {
+      Object.keys(seqLastBuffers).forEach(k => { if (seqLastBuffers[k]) drawSeqBlockWave(k, seqLastBuffers[k]); });
+    }).observe(seqBlocksContainer);
+  }
   function drawSeqBlockWave(kind, buffer) {
+    seqLastBuffers[kind] = buffer || seqLastBuffers[kind]; // conservé pour le redessin au resize (voir plus bas)
     const els = seqWaveEls[kind];
     if (!els || !els.bg || !els.fg || !buffer) return;
-    const peaks = computeWaveformPeaks(buffer, 50); // moins de barres que la waveform statique : blocs plus petits
-    drawWaveformCanvas(els.bg, peaks, cssVar('--border', '#ccc'));
-    drawWaveformCanvas(els.fg, peaks, cssVar('--accent', '#c9713c'));
+    renderWaveformPair(els.bg, els.fg, buffer, cssVar('--border', '#ccc'), cssVar('--accent', '#c9713c'));
   }
-  function activateSeqStage(kind, durationSec, buffer) {
+  // État du bloc actuellement en cours de lecture, retenu pour permettre le seek (glisser sur sa waveform) :
+  // sans ça, impossible de savoir quel buffer/gain relancer, ni à quelle position on se trouve réellement
+  // dedans (le curseur visuel seul ne suffit pas — il faut aussi la référence temporelle audio exacte).
+  let currentSeqBlockInfo = null; // { kind, buffer, gain, totalSec, virtualZero, terminal }
+  function activateSeqStage(kind, remainingSec, totalSec, buffer, gainValue, terminal) {
     const order = ['intro', 'segment', 'outro'];
     const idx = order.indexOf(kind);
     // Tout ce qui précède ce stade (hors "segment", qui se remplit à nouveau à chaque tirage plutôt que
@@ -726,13 +837,15 @@ function initTrackPlayer(track, wrapper) {
       if (els && els.fg) { els.fg.style.transition = 'none'; els.fg.style.clipPath = 'inset(0 0% 0 0)'; }
     });
     const block = seqBlockEls[kind], els = seqWaveEls[kind];
+    const startFraction = totalSec > 0 ? Math.max(0, Math.min(1, 1 - (remainingSec / totalSec))) : 0;
+    currentSeqBlockInfo = { kind, buffer, gain: gainValue, totalSec, virtualZero: ctx.currentTime - (startFraction * totalSec), terminal: !!terminal };
     if (block) {
       block.classList.remove('done'); block.classList.add('active');
       if (buffer) drawSeqBlockWave(kind, buffer);
       if (els && els.fg) {
-        els.fg.style.transition = 'none'; els.fg.style.clipPath = 'inset(0 100% 0 0)';
+        els.fg.style.transition = 'none'; els.fg.style.clipPath = `inset(0 ${(1 - startFraction) * 100}% 0 0)`;
         void els.fg.offsetWidth; // force le reflow avant de relancer la transition, sinon le navigateur la fusionne avec le reset ci-dessus
-        if (durationSec > 0) { els.fg.style.transition = `clip-path ${durationSec}s linear`; els.fg.style.clipPath = 'inset(0 0% 0 0)'; }
+        if (remainingSec > 0) { els.fg.style.transition = `clip-path ${remainingSec}s linear`; els.fg.style.clipPath = 'inset(0 0% 0 0)'; }
       }
     }
     // Le passage à l'outro clôt définitivement le stade "segment" (plus de nouveau tirage à suivre).
@@ -742,34 +855,40 @@ function initTrackPlayer(track, wrapper) {
     }
   }
   function resetSeqStages() {
+    currentSeqBlockInfo = null;
     Object.keys(seqBlockEls).forEach(k => {
       const block = seqBlockEls[k], els = seqWaveEls[k];
       if (block) block.classList.remove('active', 'done');
       if (els && els.fg) { els.fg.style.transition = 'none'; els.fg.style.clipPath = 'inset(0 100% 0 0)'; }
     });
   }
-  function scheduleSeqLabelUpdate(ctxStartTime, label, kind, fillDurationSec, buffer) {
+  // fillDurationSec : temps restant à animer jusqu'à 100% (pas forcément la durée totale du bloc — après
+  // un seek, on reprend au milieu). totalDurationSec : durée nominale complète du bloc, nécessaire pour
+  // savoir où se trouve le curseur de seek même après plusieurs reprises successives.
+  function scheduleSeqLabelUpdate(ctxStartTime, label, kind, fillDurationSec, totalDurationSec, buffer, gainValue, terminal) {
     const delayMs = Math.max(0, (ctxStartTime - ctx.currentTime) * 1000);
     const id = setTimeout(() => {
       pulseMeter(seqMeterEl);
       if (seqCurrentEl) seqCurrentEl.textContent = label;
-      if (kind) activateSeqStage(kind, fillDurationSec, buffer);
+      if (kind) activateSeqStage(kind, (fillDurationSec != null) ? fillDurationSec : buffer.duration, totalDurationSec, buffer, gainValue, terminal);
     }, delayMs);
     seqTimeouts.push(id);
   }
-  function scheduleSeqGeneration(ctxStartTime, buffer, label, kind, fillDurationSec, gainValue) {
+  function scheduleSeqGeneration(ctxStartTime, buffer, label, kind, fillDurationSec, gainValue, offsetSec, totalDurationSec, terminal) {
     if (!buffer) return;
+    const off = offsetSec || 0;
+    const total = totalDurationSec != null ? totalDurationSec : ((fillDurationSec != null) ? fillDurationSec + off : buffer.duration);
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     const g = ctx.createGain();
     g.gain.setValueAtTime(gainValue != null ? gainValue : 1, ctxStartTime);
     src.connect(g); g.connect(ctx.destination);
-    src.start(ctxStartTime, 0);
+    src.start(ctxStartTime, off);
     seqActiveSources.push({ src, gain: g });
     seqLastGenSources = [src];
     // Sans durée explicite (cas de l'outro, qui ne programme rien après elle) : on anime le remplissage
     // sur la durée réelle du fichier décodé, seule longueur connue dans ce cas.
-    scheduleSeqLabelUpdate(ctxStartTime, label, kind, (fillDurationSec != null) ? fillDurationSec : buffer.duration, buffer);
+    scheduleSeqLabelUpdate(ctxStartTime, label, kind, fillDurationSec, total, buffer, gainValue, terminal);
   }
   // Détermine le prochain bloc à programmer : soit l'outro (si "Aller vers la fin" a été demandé et
   // qu'une outro existe), soit rien du tout (demande faite mais pas d'outro : on laisse filer), soit
@@ -780,10 +899,11 @@ function initTrackPlayer(track, wrapper) {
       if (outroBuffer) return { buffer: outroBuffer, label: (track.outro && track.outro.label) || 'Outro', durationSec: null, terminal: true, kind: 'outro', gain: effGain(track.outro) };
       return null;
     }
-    const idx = pickSegmentIndex();
-    if (idx < 0) return null;
-    const seg = track.segments[idx];
-    return { buffer: segmentBuffers[idx], label: (seg && seg.label) || ('Segment ' + (idx + 1)), durationSec: blockSeconds(seg && seg.bars), terminal: false, kind: 'segment', gain: effGain(seg) };
+    const picked = pickNextSegmentSlot();
+    if (!picked) return null;
+    const slot = track.segmentSlots[picked.slotIdx];
+    const alt = resolveSlotAlternative(picked.slotIdx, picked.altIdx);
+    return { buffer: slotBuffers[picked.slotIdx][picked.altIdx], label: (alt && alt.label) || (slot.label || ('Emplacement ' + (picked.slotIdx + 1))), durationSec: blockSeconds(alt && alt.bars), terminal: false, kind: 'segment', gain: effGain(alt) };
   }
   function armSeqFinalEnd() {
     const marker = seqLastGenSources[0];
@@ -808,7 +928,7 @@ function initTrackPlayer(track, wrapper) {
         armSeqFinalEnd();
         return;
       }
-      scheduleSeqGeneration(seqNextStartCtxTime, next.buffer, next.label, next.kind, next.terminal ? null : next.durationSec, next.gain);
+      scheduleSeqGeneration(seqNextStartCtxTime, next.buffer, next.label, next.kind, next.terminal ? null : next.durationSec, next.gain, 0, null, next.terminal);
       if (next.terminal) {
         clearInterval(seqSchedulerTimer); seqSchedulerTimer = null;
         armSeqFinalEnd();
@@ -832,20 +952,46 @@ function initTrackPlayer(track, wrapper) {
   }
   function playSequential(isContinuation) {
     stopSequential();
+    // Un vrai démarrage (pas une reprise après pause/veille) repart du premier emplacement de la chaîne —
+    // la reprise, elle, continue le cycle là où il en était plutôt que de tout redémarrer.
+    if (!isContinuation) currentSlotIndex = 0;
     const now = ctx.currentTime;
     let firstBuffer, firstLabel, firstDurationSec, firstKind, firstGain;
     if (!isContinuation && introBuffer) {
       firstBuffer = introBuffer; firstLabel = (track.intro && track.intro.label) || 'Intro'; firstDurationSec = blockSeconds(track.intro && track.intro.bars); firstKind = 'intro'; firstGain = effGain(track.intro);
     } else {
-      const idx = pickSegmentIndex();
-      if (idx < 0) { if (statusEl) statusEl.textContent = t('noSegmentAvailable'); return; }
-      const seg = track.segments[idx];
-      firstBuffer = segmentBuffers[idx]; firstLabel = (seg && seg.label) || ('Segment ' + (idx + 1)); firstDurationSec = blockSeconds(seg && seg.bars); firstKind = 'segment'; firstGain = effGain(seg);
+      const picked = pickNextSegmentSlot();
+      if (!picked) { if (statusEl) statusEl.textContent = t('noSegmentAvailable'); return; }
+      const slot = track.segmentSlots[picked.slotIdx];
+      const alt = resolveSlotAlternative(picked.slotIdx, picked.altIdx);
+      firstBuffer = slotBuffers[picked.slotIdx][picked.altIdx]; firstLabel = (alt && alt.label) || (slot.label || ('Emplacement ' + (picked.slotIdx + 1))); firstDurationSec = blockSeconds(alt && alt.bars); firstKind = 'segment'; firstGain = effGain(alt);
     }
     scheduleSeqGeneration(now, firstBuffer, firstLabel, firstKind, firstDurationSec, firstGain);
     seqNextStartCtxTime = now + firstDurationSec;
     seqSchedulerTimer = setInterval(seqSchedulerTick, 200);
     if (goToEndBtn) goToEndBtn.disabled = false;
+  }
+  // Seek dans le bloc actuellement actif (glisser sur sa waveform) : on arrête proprement tout ce qui est
+  // programmé (comme un stop classique), puis on relance le MÊME buffer à la nouvelle position, et on
+  // reprend la boucle de planification pour la suite comme si de rien n'était — le prochain segment tiré
+  // au sort, ou la fin, ne sont pas affectés par le seek.
+  function seekSequential(targetSec) {
+    if (!currentSeqBlockInfo || !playing) return;
+    const { kind, buffer, gain, totalSec, terminal } = currentSeqBlockInfo;
+    const off = Math.max(0, Math.min(totalSec - 0.05, targetSec));
+    const remaining = totalSec - off;
+    stopSequential();
+    const now = ctx.currentTime;
+    const label = seqCurrentEl ? seqCurrentEl.textContent : '';
+    scheduleSeqGeneration(now, buffer, label, kind, terminal ? null : remaining, gain, off, totalSec, terminal);
+    if (terminal) {
+      armSeqFinalEnd();
+      if (goToEndBtn) { goToEndBtn.disabled = true; goToEndBtn.textContent = t('endingWithOutro'); }
+    } else {
+      seqNextStartCtxTime = now + remaining;
+      seqSchedulerTimer = setInterval(seqSchedulerTick, 200);
+      if (goToEndBtn) goToEndBtn.disabled = false;
+    }
   }
   let level = 0, playing = false, startedAt = 0, offsetAt = (useQuantizedLoop ? startTrackSec : 0), rafId = null, ready = false;
   let isDraggingSeek = false; // vrai pendant qu'on glisse sur la barre de lecture — tick() ne doit pas écraser la position affichée pendant ce temps
@@ -999,8 +1145,9 @@ function initTrackPlayer(track, wrapper) {
       });
       const groupPicks = [];
       (track.randomGroups || []).forEach((group, gi) => {
-        const idx = (reroll === false && lastPickedIndex[gi] !== undefined && lastPickedIndex[gi] !== -1)
-          ? lastPickedIndex[gi]
+        const canonKey = canonicalGroupKey(gi);
+        const idx = (reroll === false && lastPickedIndex[canonKey] !== undefined && lastPickedIndex[canonKey] !== -1)
+          ? lastPickedIndex[canonKey]
           : pickAlternativeIndex(gi);
         let label = '—';
         let silent = true;
@@ -1184,7 +1331,7 @@ function initTrackPlayer(track, wrapper) {
       offsetAt = currentOffset;
       playThisTrack(true, true);
     } else {
-      lastPickedIndex = lastPickedIndex.map(() => -1);
+      Object.keys(lastPickedIndex).forEach(k => { lastPickedIndex[k] = -1; });
     }
   }
 
@@ -1214,6 +1361,41 @@ function initTrackPlayer(track, wrapper) {
       trackPublicEvent('go_to_end_click', { trackId: track.id });
     });
   }
+
+  // Glisser sur la waveform du bloc séquentiel actuellement actif pour avancer/reculer dedans — même
+  // principe que la barre de lecture des autres modes (position affichée en direct pendant le glisser,
+  // seek audio réel seulement au relâchement), mais limité au bloc en cours : impossible de glisser sur
+  // un bloc déjà terminé (figé) ou pas encore atteint (son contenu n'est pas encore tiré au sort).
+  Object.keys(seqBlockEls).forEach(kind => {
+    const block = seqBlockEls[kind];
+    const els = seqWaveEls[kind];
+    if (!block || !els || !els.fg) return;
+    let dragging = false;
+    function fractionFromEvent(e) {
+      const rect = block.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    }
+    function isSeekable() { return playing && currentSeqBlockInfo && currentSeqBlockInfo.kind === kind && block.classList.contains('active'); }
+    block.addEventListener('pointerdown', (e) => {
+      if (!isSeekable()) return;
+      dragging = true;
+      try { block.setPointerCapture(e.pointerId); } catch (err) {}
+      els.fg.style.transition = 'none';
+      els.fg.style.clipPath = `inset(0 ${(1 - fractionFromEvent(e)) * 100}% 0 0)`;
+    });
+    block.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      els.fg.style.clipPath = `inset(0 ${(1 - fractionFromEvent(e)) * 100}% 0 0)`;
+    });
+    block.addEventListener('pointerup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      const targetSec = fractionFromEvent(e) * currentSeqBlockInfo.totalSec;
+      trackPublicEvent('seq_block_seek', { trackId: track.id, kind });
+      seekSequential(targetSec);
+    });
+    block.addEventListener('pointercancel', () => { dragging = false; });
+  });
 
   document.addEventListener('stop-track', (e) => { if (e.detail === track.id) stopAllSources(); });
   // Reprise après mise en veille de l'écran ou passage en arrière-plan : les minuteurs de programmation
@@ -1366,12 +1548,16 @@ function initTrackPlayer(track, wrapper) {
         } catch (e) { /* une couche fixe manquante ne bloque pas les autres */ }
       }
       if (fixedBuffers.every(b => !b)) { if (statusEl) statusEl.textContent = t('loadErrorNoFixedLayers'); setLoadErrorIcon(); return; }
+      // Deux passes : d'abord décoder réellement les groupes avec leur propre contenu, puis faire pointer
+      // les groupes qui "dupliquent" (referencesGroupId) vers le MÊME tableau de buffers déjà décodé —
+      // aucun fichier n'est chargé ni décodé deux fois, l'alias suffit à partager la mémoire.
       for (let gi = 0; gi < rawGroups.length; gi++) {
+        if (rawGroups[gi].referencesGroupId) continue; // traité en 2e passe
         const alts = rawGroups[gi].alternatives || [];
         // Même longueur que les alternatives déclarées, y compris les slots vides (intentionnels : ils restent
         // un choix possible du tirage, avec pour effet un cycle silencieux pour ce groupe — pas un fichier à charger).
         groupBuffers[gi] = new Array(alts.length).fill(null);
-        lastPickedIndex[gi] = -1;
+        lastPickedIndex[canonicalGroupKey(gi)] = -1;
         for (let ai = 0; ai < alts.length; ai++) {
           if (!layerHasSource(alts[ai])) continue;
           try {
@@ -1382,19 +1568,24 @@ function initTrackPlayer(track, wrapper) {
           } catch (e) { /* fichier manquant : ce tirage restera silencieux plutôt que de bloquer la lecture */ }
         }
       }
+      for (let gi = 0; gi < rawGroups.length; gi++) {
+        if (!rawGroups[gi].referencesGroupId) continue;
+        const sourceIdx = rawGroups.findIndex(g => g.id === rawGroups[gi].referencesGroupId);
+        groupBuffers[gi] = sourceIdx >= 0 ? groupBuffers[sourceIdx] : [];
+      }
     } else if (isSequential) {
       const hasIntro = layerHasSource(track.intro);
       const hasOutro = layerHasSource(track.outro);
-      const segs = (track.segments || []).filter(layerHasSource);
-      total = (hasIntro ? 1 : 0) + (hasOutro ? 1 : 0) + segs.length + stingerDefs.length;
-      segmentBuffers = new Array((track.segments || []).length).fill(null);
+      const rawSlots = track.segmentSlots || [];
+      const slotAltsWithSource = rawSlots.reduce((sum, sl) => sum + (sl.alternatives || []).filter(layerHasSource).length, 0);
+      total = (hasIntro ? 1 : 0) + (hasOutro ? 1 : 0) + slotAltsWithSource + stingerDefs.length;
       if (hasIntro) {
         try {
           const ab = await loadArrayBuffer(track.intro);
           introBuffer = await decodeAudioDataCompat(ab);
           loaded++;
           if (statusEl) statusEl.textContent = t('loadingProgress', { loaded, total });
-        } catch (e) { /* intro manquante : la lecture démarrera directement sur un segment */ }
+        } catch (e) { /* intro manquante : la lecture démarrera directement sur un emplacement */ }
       }
       if (hasOutro) {
         try {
@@ -1402,18 +1593,32 @@ function initTrackPlayer(track, wrapper) {
           outroBuffer = await decodeAudioDataCompat(ab);
           loaded++;
           if (statusEl) statusEl.textContent = t('loadingProgress', { loaded, total });
-        } catch (e) { /* outro manquante : "Aller vers la fin" laissera simplement filer le segment en cours */ }
+        } catch (e) { /* outro manquante : "Aller vers la fin" laissera simplement filer l'emplacement en cours */ }
       }
-      for (let sgi = 0; sgi < (track.segments || []).length; sgi++) {
-        if (!layerHasSource(track.segments[sgi])) continue;
-        try {
-          const ab = await loadArrayBuffer(track.segments[sgi]);
-          segmentBuffers[sgi] = await decodeAudioDataCompat(ab);
-          loaded++;
-          if (statusEl) statusEl.textContent = t('loadingProgress', { loaded, total });
-        } catch (e) { /* segment manquant : simplement absent du tirage, ne bloque pas le reste */ }
+      for (let si = 0; si < rawSlots.length; si++) {
+        if (rawSlots[si].referencesSlotId) continue; // traité en 2e passe
+        const alts = rawSlots[si].alternatives || [];
+        // Même longueur que les alternatives déclarées, y compris les slots vides (intentionnel, même
+        // convention que les groupes du vertical-random) : ça reste un choix possible du tirage, avec pour
+        // effet un cycle silencieux pour cet emplacement — pas un fichier à charger.
+        slotBuffers[si] = new Array(alts.length).fill(null);
+        lastPickedSlotAltIndex[canonicalSlotKey(si)] = -1;
+        for (let ai = 0; ai < alts.length; ai++) {
+          if (!layerHasSource(alts[ai])) continue;
+          try {
+            const ab = await loadArrayBuffer(alts[ai]);
+            slotBuffers[si][ai] = await decodeAudioDataCompat(ab);
+            loaded++;
+            if (statusEl) statusEl.textContent = t('loadingProgress', { loaded, total });
+          } catch (e) { /* alternative manquante : ce tirage restera silencieux pour cet emplacement, ne bloque pas le reste */ }
+        }
       }
-      if (segmentBuffers.every(b => !b)) { if (statusEl) statusEl.textContent = t('loadErrorNoSegments'); setLoadErrorIcon(); return; }
+      for (let si = 0; si < rawSlots.length; si++) {
+        if (!rawSlots[si].referencesSlotId) continue;
+        const sourceIdx = rawSlots.findIndex(sl => sl.id === rawSlots[si].referencesSlotId);
+        slotBuffers[si] = sourceIdx >= 0 ? slotBuffers[sourceIdx] : [];
+      }
+      if (slotBuffers.every(bufs => bufs.every(b => !b))) { if (statusEl) statusEl.textContent = t('loadErrorNoSegments'); setLoadErrorIcon(); return; }
     } else {
       total = layersToLoad.length + stingerDefs.length;
       for (let i = 0; i < layersToLoad.length; i++) {
@@ -1426,7 +1631,7 @@ function initTrackPlayer(track, wrapper) {
       }
       if (isStatic && buffers[0] && waveformBg) {
         try {
-          waveformPeaks = computeWaveformPeaks(buffers[0], 200);
+          waveformBuffer = buffers[0];
           redrawWaveforms();
         } catch (e) { /* la waveform est un bonus visuel : un échec ici ne doit jamais bloquer la lecture */ }
       }
@@ -1443,7 +1648,7 @@ function initTrackPlayer(track, wrapper) {
     const allMainBuffers = isVerticalRandom
       ? [...fixedBuffers, ...groupBuffers.flat()].filter(Boolean)
       : isSequential
-      ? [introBuffer, outroBuffer, ...segmentBuffers].filter(Boolean)
+      ? [introBuffer, outroBuffer, ...slotBuffers.flat()].filter(Boolean)
       : buffers.filter(Boolean);
     const decodedMax = Math.max(0, ...allMainBuffers.map(b => b.duration), ...stingerBuffers.filter(Boolean).map(b => b.duration));
     if (decodedMax > (track.duration || 0)) {
