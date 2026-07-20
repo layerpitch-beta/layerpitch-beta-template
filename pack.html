@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title data-i18n="pageTitle">LayerPitch — Collection</title>
+<title data-i18n="pageTitle">LayerPitch — Pack</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -67,10 +67,10 @@
   .voice-refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
   .voice-refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .seq-blocks { display: flex; gap: 6px; margin-top: 8px; margin-bottom: 4px; }
-  .seq-block { flex: 1; height: 34px; border-radius: 4px; border: 1px solid var(--border); position: relative; overflow: hidden; background: transparent; }
+  .seq-block { flex: 1; height: 34px; border-radius: 4px; border: 1px solid var(--border); position: relative; overflow: hidden; background: transparent; touch-action: none; }
   .seq-block-wave-bg, .seq-block-wave-fg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .seq-block-wave-fg { clip-path: inset(0 100% 0 0); }
-  .seq-block.active { border-color: var(--accent); }
+  .seq-block.active { border-color: var(--accent); cursor: pointer; }
   .seq-block-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.03em; color: var(--text-dim); z-index: 1; padding: 0 4px; text-align: center; text-shadow: 0 0 4px var(--bg-card, #fff), 0 0 4px var(--bg-card, #fff), 0 0 4px var(--bg-card, #fff); }
   .track-intensity-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 6px; }
   .intensity-picker { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -143,7 +143,7 @@
   .buy-btn:hover { opacity: 0.9; }
   .buy-btn.disabled { background: var(--border); color: var(--text-dimmer); cursor: not-allowed; pointer-events: none; }
   .buy-hint { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dimmer); margin-top: 10px; }
-  .implementation-help { margin-top: 32px; padding: 16px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); font-size: 13px; color: var(--text-dim); text-align: center; }
+  .implementation-help { margin-top: 18px; font-size: 11.5px; color: var(--text-dimmer); text-align: center; font-family: 'JetBrains Mono', monospace; }
 
   /* Mode Test Gameplay : bouton déclencheur + boîte de dialogue pour coller une URL vidéo */
   .video-test-trigger-btn {
@@ -233,7 +233,7 @@
      differé, n'est utilisé que si le décodage natif échoue, voir decodeAudioDataCompat dans player.js -->
 <script defer src="https://unpkg.com/@wasm-audio-decoders/ogg-vorbis/dist/ogg-vorbis-decoder.min.js"></script>
 <script src="layerpitch-i18n.js"></script>
-<script src="player.js?v=1784392640474"></script>
+<script src="player.js"></script>
 <script>
 const { escapeHtml, linkify, renderTracksBlock, setupContrastToggle } = window.LayerPlayerCore;
 
@@ -243,6 +243,12 @@ const { escapeHtml, linkify, renderTracksBlock, setupContrastToggle } = window.L
 // visiteur. 'fr' par défaut si le pack est ouvert directement (lien ancien, accès direct sans AdReel).
 const pageLang = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'fr';
 function currentLang() { return pageLang; }
+// Texte bilingue (présentation de pack/collection) : montre la version qui correspond à la langue de
+// la page ; si elle n'a jamais été remplie par le compositeur, on préfère montrer l'autre langue plutôt
+// que rien du tout.
+function pickBilingualText(fr, en) {
+  return (pageLang === 'en' ? (en || fr) : (fr || en)) || '';
+}
 // tr('clé') pour le texte généré en JS ; data-i18n pour le HTML statique. Un même dictionnaire pour les
 // deux. Ordre de repli : zone pack -> zone shared -> même chose en français -> la clé elle-même.
 function tr(key) {
@@ -399,7 +405,7 @@ async function init() {
     container.innerHTML = `
       ${pack.illustration ? `<img class="pack-illustration" src="./images/${pack.illustration}" alt="">` : `<div class="pack-illustration empty"></div>`}
       <div class="pack-title">${escapeHtml(pack.title)}</div>
-      <div class="pack-presentation">${(pack.presentation || '').split('\n\n').map(p => `<p>${linkify(p)}</p>`).join('')}</div>
+      <div class="pack-presentation">${pickBilingualText(pack.presentationFr, pack.presentationEn).split('\n\n').map(p => `<p>${linkify(p)}</p>`).join('')}</div>
     `;
     const musicContainer = document.createElement('div');
     if (pack.videoTestModeEnabled) {
@@ -434,6 +440,14 @@ async function init() {
       buySection.innerHTML = `<span class="buy-btn disabled">${tr('comingSoon')}</span><div class="buy-hint">${tr('notForSaleYet')}</div>`;
     }
     container.appendChild(buySection);
+
+    const containingCollections = (data.collections || []).filter(c => (c.packIds || []).includes(pack.id));
+    if (containingCollections.length) {
+      const collEl = document.createElement('div');
+      collEl.className = 'pack-link';
+      collEl.innerHTML = containingCollections.map(c => `<a href="./collection.html?id=${encodeURIComponent(c.id)}&lang=${pageLang}">${tr('partOfCollectionMention').replace('{title}', escapeHtml(c.title))}</a>`).join('<br>');
+      container.appendChild(collEl);
+    }
 
     const credit = document.createElement('div');
     credit.className = 'layerpitch-credit';
