@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "publishedAt": null,
+  "library": [],
+  "packs": [],
+  "collections": [],
+  "implementationSkills": {
+    "wwise": false,
+    "fmod": false,
+    "unity": false,
+    "unreal": false
+  },
+  "adReels": [
+    {
+      "id": "main",
+      "label": "Principal",
+      "blocks": [
+        {
+          "id": "bmrc8jutc1864w",
+          "type": "header"
+        },
+        {
+          "id": "bmrc8jutc76x5x",
+          "type": "testimonials"
+        },
+        {
+          "id": "bmrc8jutcsb597",
+          "type": "tracks"
+        },
+        {
+          "id": "bmrc9ryuilymwc",
+          "type": "video",
+          "videos": []
+        },
+        {
+          "id": "bmrc9u6n4z4dx0",
+          "type": "text",
+          "content": "",
+          "align": "left"
+        },
+        {
+          "id": "bmrc9wrt713mzm",
+          "type": "photo",
+          "align": "left",
+          "images": []
+        },
+        {
+          "id": "bmrc8jutcd4w5f",
+          "type": "bio"
+        },
+        {
+          "id": "bmrkexrkghgp8p",
+          "type": "contact"
+        },
+        {
+          "id": "bmrn9bj1f1kcfy",
+          "type": "packs"
+        }
+      ],
+      "profile": {
+        "tagline": "",
+        "bio": "",
+        "contactEmail": "",
+        "contactUrl": "",
+        "formspreeEndpoint": "",
+        "logo": null,
+        "photo": null,
+        "bgColor": "#f6f5f3",
+        "textColor": "#262521"
+      },
+      "testimonials": [],
+      "trackIds": [],
+      "trackOverrides": {}
+    }
+  ]
+}
