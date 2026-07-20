@@ -57,9 +57,11 @@
   .video-grid-multi { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
   .video-comment { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.5; text-align: center; font-style: italic; }
   .packs-list { display: flex; flex-direction: column; }
-  .packs-list-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border); text-decoration: none; color: var(--text); }
+  .packs-list-item { display: flex; align-items: center; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--border); text-decoration: none; color: var(--text); }
   .packs-list-item:last-child { border-bottom: none; }
-  .packs-list-item-title { font-family: 'Space Grotesk', sans-serif; font-size: 15px; }
+  .packs-list-item-thumb { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
+  .packs-list-item-thumb.empty { background: linear-gradient(135deg, #2a2822, #423b30); }
+  .packs-list-item-title { font-family: 'Space Grotesk', sans-serif; font-size: 15px; flex: 1; }
   .packs-list-item-arrow { color: var(--text-dimmer); font-family: 'JetBrains Mono', monospace; transition: transform 0.15s ease, color 0.15s ease; flex-shrink: 0; }
   .packs-list-item:hover .packs-list-item-arrow { transform: translateX(3px); color: var(--accent); }
   .contact-form { display: flex; flex-direction: column; max-width: 480px; }
@@ -124,10 +126,10 @@
   .voice-refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
   .voice-refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .seq-blocks { display: flex; gap: 6px; margin-top: 8px; margin-bottom: 4px; }
-  .seq-block { flex: 1; height: 34px; border-radius: 4px; border: 1px solid var(--border); position: relative; overflow: hidden; background: transparent; }
+  .seq-block { flex: 1; height: 34px; border-radius: 4px; border: 1px solid var(--border); position: relative; overflow: hidden; background: transparent; touch-action: none; }
   .seq-block-wave-bg, .seq-block-wave-fg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .seq-block-wave-fg { clip-path: inset(0 100% 0 0); }
-  .seq-block.active { border-color: var(--accent); }
+  .seq-block.active { border-color: var(--accent); cursor: pointer; }
   .seq-block-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.03em; color: var(--text-dim); z-index: 1; padding: 0 4px; text-align: center; text-shadow: 0 0 4px var(--bg-card, #fff), 0 0 4px var(--bg-card, #fff), 0 0 4px var(--bg-card, #fff); }
   .track-intensity-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 6px; }
   .intensity-picker { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -211,7 +213,7 @@
      differé, n'est utilisé que si le décodage natif échoue, voir decodeAudioDataCompat dans player.js -->
 <script defer src="https://unpkg.com/@wasm-audio-decoders/ogg-vorbis/dist/ogg-vorbis-decoder.min.js"></script>
 <script src="layerpitch-i18n.js"></script>
-<script src="player.js?v=1784392640474"></script>
+<script src="player.js"></script>
 <script>
 const { section, escapeHtml, linkify, renderTracksBlock, setupContrastToggle } = window.LayerPlayerCore;
 
@@ -346,7 +348,7 @@ function renderPacksBlockItem(container, block, packsById) {
     const a = document.createElement('a');
     a.className = 'packs-list-item';
     a.href = `./pack.html?id=${encodeURIComponent(p.id)}&lang=${pageLang}`;
-    a.innerHTML = `<span class="packs-list-item-title">${escapeHtml(p.title)}</span><span class="packs-list-item-arrow">→</span>`;
+    a.innerHTML = `${p.illustration ? `<img class="packs-list-item-thumb" src="./images/${p.illustration}" alt="">` : `<div class="packs-list-item-thumb empty"></div>`}<span class="packs-list-item-title">${escapeHtml(p.title)}</span><span class="packs-list-item-arrow">→</span>`;
     list.appendChild(a);
   });
   el.appendChild(list);
