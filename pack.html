@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title data-i18n="pageTitle">LayerPitch — Collection</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #f6f5f3; --bg-card: #ffffff; --border: #e4e1da;
+    --text: #262521; --text-dim: #6f6b62; --text-dimmer: #a8a399;
+    --accent: #c9713c; --accent-soft: #f3e4d6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  img { max-width: 100%; height: auto; display: block; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; padding: 56px 24px 60px; }
+  .page { max-width: 760px; margin: 0 auto; }
+  a { color: var(--accent); }
+
+  .back-link { display: inline-block; margin-bottom: 32px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); text-decoration: none; }
+  .back-link:hover { color: var(--accent); }
+
+  .pack-illustration { display: block; max-width: 100%; max-height: 380px; width: auto; height: auto; margin: 0 auto 28px; border-radius: 8px; border: 1px solid var(--border); }
+  .pack-illustration.empty { width: 100%; max-height: none; aspect-ratio: 16/7; background: linear-gradient(135deg, #2a2822, #423b30); }
+
+  .pack-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 28px; margin-bottom: 16px; }
+  .pack-presentation p { font-size: 14.5px; line-height: 1.7; color: var(--text-dim); margin-bottom: 14px; white-space: pre-wrap; }
+
+  .block { margin-bottom: 56px; margin-top: 48px; }
+  .section-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 18px;
+  }
+
+  .track { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); padding: 26px; margin-bottom: 16px; }
+  .track-intensity-block { margin-top: 16px; }
+  .voice-graph { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .voice-graph-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 8px; }
+  .voice-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+  .voice-row-label { color: var(--text-dim); min-width: 130px; flex-shrink: 0; }
+  .voice-row-current { font-family: 'JetBrains Mono', monospace; color: var(--text-dim); font-style: italic; min-width: 130px; flex-shrink: 0; }
+  .voice-meter { width: 20px; height: 8px; border-radius: 2px; background: var(--border); flex-shrink: 0; }
+  .voice-meter-bar { position: relative; width: 70px; height: 8px; border-radius: 2px; background: var(--border); overflow: hidden; flex-shrink: 0; }
+  .voice-meter-bar-fill { position: absolute; inset: 0; width: 0%; background: var(--accent); transition: width 0.18s ease-out; }
+  .wwise-graph { position: relative; display: flex; align-items: stretch; gap: 24px; padding: 12px 4px 6px; min-height: 60px; }
+  .wwise-graph-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .wwise-line { fill: none; stroke: var(--border); stroke-width: 1.5px; }
+  .wwise-col { display: flex; flex-direction: column; justify-content: center; gap: 10px; position: relative; z-index: 1; }
+  .wwise-col-voices { justify-content: space-around; align-items: center; flex: 1; }
+  .wwise-node { background: var(--bg-card); border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-dim); white-space: nowrap; text-align: center; }
+  .wwise-node-source, .wwise-node-bus { font-weight: 600; color: var(--text); }
+  .wwise-node-voice { display: flex; flex-direction: column; gap: 5px; align-items: center; width: 220px; flex-shrink: 0; }
+  .wwise-node-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
+  .wwise-node-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; text-align: left; }
+  .wwise-node-controls { display: flex; gap: 3px; flex-shrink: 0; }
+  .voice-ctrl-btn { width: 18px; height: 18px; border-radius: 3px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-dimmer); font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 600; line-height: 1; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; }
+  .voice-ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .voice-ctrl-btn[data-voice-action="solo"].active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .voice-ctrl-btn[data-voice-action="mute"].active { background: #b5442e; border-color: #b5442e; color: #fff; }
+  .wwise-node-wave { position: relative; width: 100%; height: 30px; border-radius: 3px; overflow: hidden; background: var(--bg); }
+  .wwise-wave-bg, .wwise-wave-fg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .wwise-wave-fg { clip-path: inset(0 100% 0 0); }
+  .voice-meter.pulse { background: var(--accent); animation: voice-meter-fade 0.5s ease-out forwards; }
+  @keyframes voice-meter-fade { 0% { opacity: 1; } 100% { opacity: 0.35; } }
+  .voice-refresh-btn { margin-top: 8px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 3px 9px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; }
+  .voice-refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .voice-refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .seq-blocks { display: flex; gap: 6px; margin-top: 8px; margin-bottom: 4px; }
+  .seq-block { flex: 1; height: 34px; border-radius: 4px; border: 1px solid var(--border); position: relative; overflow: hidden; background: transparent; }
+  .seq-block-wave-bg, .seq-block-wave-fg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .seq-block-wave-fg { clip-path: inset(0 100% 0 0); }
+  .seq-block.active { border-color: var(--accent); }
+  .seq-block-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.03em; color: var(--text-dim); z-index: 1; padding: 0 4px; text-align: center; text-shadow: 0 0 4px var(--bg-card, #fff), 0 0 4px var(--bg-card, #fff), 0 0 4px var(--bg-card, #fff); }
+  .track-intensity-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 6px; }
+  .intensity-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+  .intensity-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 10px; border-radius: 10px;
+    border: 1px solid var(--border); background: transparent; color: var(--text-dim); cursor: pointer; line-height: 1.6;
+  }
+  .intensity-chip:hover { border-color: var(--accent); color: var(--accent); }
+  .intensity-chip.active { background: var(--accent); border-color: var(--accent); color: var(--bg, #fff); }
+  .intensity-chip-num { opacity: 0.55; margin-right: 5px; }
+
+  .loop-count-block { margin-top: 14px; }
+  .loop-count-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dimmer); margin-bottom: 6px; }
+  .loop-count-block select { font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 5px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-dim); }
+
+  .track-row-wrapper { border-bottom: 1px solid var(--border); }
+  .track-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; padding: 12px 0; }
+  .play-btn {
+    width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border); background: transparent;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; padding: 0; color: var(--text-dim);
+  }
+  .play-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .play-btn svg { width: 12px; height: 12px; }
+  .play-btn svg.loading-icon { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; animation: layerpitch-spin 0.8s linear infinite; transform-origin: center; }
+  .play-btn svg.error-icon { fill: none; stroke: currentColor; stroke-width: 2; }
+  @keyframes layerpitch-spin { to { transform: rotate(360deg); } }
+  .track-row-title { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+  .track-row-title .name { font-family: 'Space Grotesk', sans-serif; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mode-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.04em; color: var(--text-dimmer);
+    border: 1px dashed var(--border); border-radius: 4px; padding: 1px 6px; flex-shrink: 0; white-space: nowrap;
+  }
+  .loop-icon { display: inline-flex; flex-shrink: 0; color: var(--text-dimmer); }
+  .loop-icon svg { width: 11px; height: 11px; }
+  .track-row-details { max-height: 0; overflow: hidden; transition: max-height 0.28s ease; }
+  .track-row-details-inner { padding: 0 0 18px 38px; }
+  .track-desc { font-size: 13px; line-height: 1.6; color: var(--text-dim); margin-bottom: 16px; white-space: pre-wrap; }
+  .status { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dimmer); margin-bottom: 10px; min-height: 14px; }
+
+  .progress-wrap { position: relative; height: 24px; margin-bottom: 6px; cursor: pointer; touch-action: none; }
+  .progress-wrap.waveform-mode { height: 44px; }
+  .waveform-bg, .waveform-fg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .waveform-fg { clip-path: inset(0 100% 0 0); }
+  .progress-track { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 3px; background: var(--border); border-radius: 2px; pointer-events: none; }
+  .progress-fill { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 3px; background: var(--accent); border-radius: 2px; width: 0%; pointer-events: none; }
+  .progress-head { position: absolute; top: 50%; left: 0%; transform: translate(-50%, -50%); width: 9px; height: 9px; background: var(--accent); border-radius: 50%; pointer-events: none; }
+  .time-row { display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-dimmer); }
+
+  .stingers { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .stinger-btn {
+    display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px;
+    border: 1px solid var(--border); background: transparent; color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; cursor: pointer;
+  }
+  .stinger-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .stinger-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .stinger-btn svg { width: 10px; height: 10px; }
+
+  .placeholder-tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dimmer); border: 1px dashed var(--border); border-radius: 4px; padding: 8px 12px; display: inline-block; }
+  .track.disabled { opacity: 0.5; }
+
+  .empty { font-size: 13px; color: var(--text-dim); text-align: center; padding: 20px 0; }
+
+  .buy-section { margin-top: 56px; text-align: center; padding: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .buy-btn {
+    display: inline-block; padding: 14px 32px; border-radius: 6px; background: var(--accent); color: #fff;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase;
+    text-decoration: none; border: none; cursor: pointer;
+  }
+  .buy-btn:hover { opacity: 0.9; }
+  .buy-btn.disabled { background: var(--border); color: var(--text-dimmer); cursor: not-allowed; pointer-events: none; }
+  .buy-hint { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dimmer); margin-top: 10px; }
+  .implementation-help { margin-top: 32px; padding: 16px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); font-size: 13px; color: var(--text-dim); text-align: center; }
+
+  /* Mode Test Gameplay : bouton déclencheur + boîte de dialogue pour coller une URL vidéo */
+  .video-test-trigger-btn {
+    display: block; margin: 0 auto 28px; padding: 12px 24px; border-radius: 6px; border: 1px solid var(--accent);
+    background: transparent; color: var(--accent); font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+  }
+  .video-test-trigger-btn:hover { background: var(--accent-soft); }
+  .video-test-dialog {
+    border: 1px solid var(--border); border-radius: 10px; padding: 0; max-width: 440px; width: calc(100% - 40px);
+    background: var(--bg-card); color: var(--text); box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+  }
+  .video-test-dialog::backdrop { background: rgba(0,0,0,0.4); }
+  .video-test-form { padding: 24px; display: flex; flex-direction: column; }
+  .video-test-dialog-title { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+  .video-test-dialog-hint { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin: 0 0 16px; }
+  .video-test-form input[type="text"] {
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+    color: var(--text); font-size: 13px; font-family: inherit;
+  }
+  .video-test-dialog-error { font-size: 12px; color: #c0392b; min-height: 16px; margin-top: 8px; }
+  .video-test-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+  .video-test-btn-secondary, .video-test-btn-primary {
+    padding: 9px 18px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+    letter-spacing: 0.03em; cursor: pointer; border: 1px solid var(--border);
+  }
+  .video-test-btn-secondary { background: transparent; color: var(--text-dim); }
+  .video-test-btn-secondary:hover { border-color: var(--text-dim); }
+  .video-test-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .video-test-btn-primary:hover { opacity: 0.9; }
+
+  /* Panneau vidéo intégré (écran unique) — cf. Mode Test Gameplay. Sur multi-écrans détecté
+     (window.screen.isExtended), on passe par une fenêtre séparée à la place, voir openInWindow(). */
+  .video-test-panel { display: none; background: #111; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  .video-test-panel.active { display: block; }
+  .video-test-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: #1a1a1a; }
+  .video-test-panel-title { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: #ccc; }
+  .video-test-panel-actions { display: flex; gap: 6px; }
+  .video-test-panel-btn { width: 26px; height: 26px; border-radius: 5px; border: 1px solid #3a3a3a; background: #222; color: #ccc; cursor: pointer; font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+  .video-test-panel-btn:hover { border-color: #666; color: #fff; }
+  .video-test-panel-frame-wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; }
+  .video-test-panel-frame-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+  /* Empilé par défaut (mobile, laptop pas assez large) : vidéo au-dessus, contenu de la page en dessous
+     — ordre du DOM (le panneau est déclaré avant .page dans le body). À partir de 1280px, on passe
+     côte à côte pour l'aisance d'interaction (regarder la vidéo tout en cliquant les morceaux), sans
+     que ce soit encore trop serré sur un écran de laptop 13"/14" standard. */
+  body.video-panel-active { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  body.video-panel-active .page { margin: 0; }
+  body.video-panel-active .video-test-panel { width: 100%; max-width: 640px; }
+  @media (min-width: 1280px) {
+    body.video-panel-active { flex-direction: row; align-items: flex-start; justify-content: center; max-width: 1240px; margin: 0 auto; gap: 28px; }
+    body.video-panel-active .page { order: 1; flex-shrink: 0; }
+    body.video-panel-active .video-test-panel { order: 2; width: 400px; max-width: none; flex-shrink: 0; position: sticky; top: 40px; }
+  }
+  .contrast-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 24px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-dimmer); cursor: pointer; user-select: none; }
+  .contrast-toggle input { width: auto; margin: 0; cursor: pointer; }
+  body.high-contrast .contrast-toggle { color: var(--text); font-weight: 600; }
+  body.high-contrast .pack-watermark { display: none; }
+  .layerpitch-credit { text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--text-dimmer); opacity: 0.55; letter-spacing: 0.04em; margin-top: 32px; }
+  .pack-watermark { position: fixed; inset: 0; z-index: -1; background-position: center; background-repeat: no-repeat; background-size: cover; opacity: 0.15; pointer-events: none; }
+</style>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="2dd3435c-f5c8-45c0-ab07-3b0e9fa09d2f"></script>
+</head>
+<body>
+<div id="videoTestPanel" class="video-test-panel"></div>
+<div class="page">
+  <a class="back-link" href="./index.html" data-i18n="backLink">← Retour</a>
+  <div id="content"></div>
+  <label class="contrast-toggle"><input type="checkbox" id="contrastToggle"> <span data-i18n="highContrast">Contraste renforcé</span></label>
+</div>
+
+<dialog id="videoTestDialog" class="video-test-dialog">
+  <div class="video-test-form">
+    <div class="video-test-dialog-title" data-i18n="videoTestTitle">Tester en jeu</div>
+    <p class="video-test-dialog-hint" data-i18n="videoTestHint">Colle le lien d'une vidéo YouTube ou Vimeo (gameplay, cinématique...). Elle s'ouvrira dans une fenêtre séparée, son coupé — à toi de déclencher les morceaux ici pendant que tu regardes.</p>
+    <input type="text" id="videoTestUrlInput" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+    <div class="video-test-dialog-error" id="videoTestError"></div>
+    <div class="video-test-dialog-actions">
+      <button type="button" class="video-test-btn-secondary" id="videoTestCancelBtn" data-i18n="cancel">Annuler</button>
+      <button type="button" class="video-test-btn-primary" id="videoTestOpenBtn" data-i18n="openWindow">Ouvrir la fenêtre</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Décodeur Ogg Vorbis de secours (Safari/iOS, qui ne sait pas décoder l'Ogg nativement) — chargé en
+     differé, n'est utilisé que si le décodage natif échoue, voir decodeAudioDataCompat dans player.js -->
+<script defer src="https://unpkg.com/@wasm-audio-decoders/ogg-vorbis/dist/ogg-vorbis-decoder.min.js"></script>
+<script src="layerpitch-i18n.js"></script>
+<script src="player.js?v=1784392640474"></script>
+<script>
+const { escapeHtml, linkify, renderTracksBlock, setupContrastToggle } = window.LayerPlayerCore;
+
+// Traductions de l'habillage LayerPitch (pas le contenu des packs/morceaux, qui reste dans sa langue
+// d'origine). Vit dans layerpitch-i18n.js (zones "shared" + "pack"), édité via l'outil dédié.
+// Langue transmise par l'AdReel qui a mené ici (paramètre ?lang= dans le lien), jamais choisie par le
+// visiteur. 'fr' par défaut si le pack est ouvert directement (lien ancien, accès direct sans AdReel).
+const pageLang = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'fr';
+function currentLang() { return pageLang; }
+// tr('clé') pour le texte généré en JS ; data-i18n pour le HTML statique. Un même dictionnaire pour les
+// deux. Ordre de repli : zone pack -> zone shared -> même chose en français -> la clé elle-même.
+function tr(key) {
+  const I18N = window.LAYERPITCH_I18N || { fr: { shared: {}, pack: {} }, en: { shared: {}, pack: {} } };
+  const dict = I18N[currentLang()] || I18N.fr;
+  const dictFr = I18N.fr;
+  return (dict.pack && dict.pack[key]) || (dict.shared && dict.shared[key])
+    || (dictFr.pack && dictFr.pack[key]) || (dictFr.shared && dictFr.shared[key]) || key;
+}
+function applyI18n() {
+  document.documentElement.lang = currentLang();
+  document.querySelectorAll('[data-i18n]').forEach(el => { const v = tr(el.dataset.i18n); if (v) el.textContent = v; });
+}
+window.LayerPlayerCore.setLang(pageLang);
+applyI18n();
+
+// Dupliqué à l'identique dans player.js et index.html : chaque script a sa propre closure, pas d'accès
+// croisé possible. Jamais bloquant, silencieux si Umami n'est pas chargé.
+// Contexte déposé sur window.__lpTrackContext une fois le Pack identifié plus bas — voir player.js
+// pour l'explication complète du mécanisme.
+function trackPublicEvent(name, detail) {
+  try {
+    if (!window.umami) return;
+    const ctx = window.__lpTrackContext || {};
+    window.umami.track(name, Object.assign({}, detail, ctx.type ? { [ctx.type]: ctx.id } : {}));
+  } catch (e) { /* jamais bloquant */ }
+}
+
+// Reconnaît une URL YouTube ou Vimeo et en extrait l'identifiant — gère les formats courants de chaque
+// service (watch?v=, youtu.be, /embed/, /shorts/ pour YouTube ; vimeo.com/ID et player.vimeo.com/video/ID).
+function parseVideoUrl(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl.trim()); } catch (e) { return null; }
+  const host = u.hostname.replace(/^www\./, '');
+  if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtu.be') {
+    let id = null;
+    if (host === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+    else if (u.pathname === '/watch') id = u.searchParams.get('v');
+    else if (u.pathname.startsWith('/embed/')) id = u.pathname.split('/')[2];
+    else if (u.pathname.startsWith('/shorts/')) id = u.pathname.split('/')[2];
+    if (id) return { service: 'youtube', id };
+    return null;
+  }
+  if (host === 'vimeo.com' || host === 'player.vimeo.com') {
+    const parts = u.pathname.split('/').filter(Boolean);
+    const id = parts[parts.length - 1];
+    if (id && /^\d+$/.test(id)) return { service: 'vimeo', id };
+    return null;
+  }
+  return null;
+}
+
+// Multi-écrans : window.screen.isExtended n'existe que sur Chromium (Chrome/Edge desktop) et dit si le
+// bureau de la personne s'étend sur plusieurs écrans, sans avoir besoin de lui demander la permission
+// (contrairement à l'API complète Window Management / getScreenDetails()). Sur Safari, Firefox, mobile —
+// où la propriété n'existe simplement pas — on considère qu'il n'y a qu'un seul écran, ce qui est le cas
+// le plus sûr par défaut (mieux vaut intégrer à tort que perdre la vidéo dans une fenêtre égarée).
+function isMultiScreen() {
+  try { return !!(window.screen && window.screen.isExtended); } catch (e) { return false; }
+}
+
+function videoTestUrl(parsed) {
+  return `./video-test.html?service=${parsed.service}&id=${encodeURIComponent(parsed.id)}&lang=${pageLang}`;
+}
+
+// Positionnement approximatif sur le second écran : sans permission Window Management, on ne connaît pas
+// la vraie disposition des écrans, donc on décale simplement la fenêtre de la largeur de l'écran principal.
+// Fonctionne bien pour la disposition la plus courante (écrans côte à côte) ; à défaut, la personne peut
+// toujours la déplacer elle-même — les navigateurs se souviennent en général de la position choisie.
+function openInWindow(parsed) {
+  const left = (window.screen && window.screen.width) ? window.screen.width : 0;
+  window.open(videoTestUrl(parsed), '_blank', `left=${left},top=40,width=960,height=600`);
+  trackPublicEvent('video_test_open', { service: parsed.service, mode: 'window' });
+}
+
+function closeVideoPanel() {
+  const panel = document.getElementById('videoTestPanel');
+  panel.classList.remove('active');
+  document.body.classList.remove('video-panel-active');
+  panel.innerHTML = ''; // vide l'iframe pour couper la vidéo, pas juste la masquer
+}
+
+function openInPanel(parsed) {
+  const panel = document.getElementById('videoTestPanel');
+  panel.innerHTML = `
+    <div class="video-test-panel-header">
+      <span class="video-test-panel-title">${tr('videoTestPanelTitle')}</span>
+      <div class="video-test-panel-actions">
+        <button type="button" class="video-test-panel-btn" id="videoTestDetachBtn" title="${tr('detachBtn')}" aria-label="${tr('detachBtn')}">⤢</button>
+        <button type="button" class="video-test-panel-btn" id="videoTestCloseBtn" title="${tr('closeBtn')}" aria-label="${tr('closeBtn')}">✕</button>
+      </div>
+    </div>
+    <div class="video-test-panel-frame-wrap"><iframe src="${videoTestUrl(parsed)}" allow="autoplay"></iframe></div>
+  `;
+  panel.classList.add('active');
+  document.body.classList.add('video-panel-active');
+  document.getElementById('videoTestCloseBtn').addEventListener('click', closeVideoPanel);
+  document.getElementById('videoTestDetachBtn').addEventListener('click', () => {
+    closeVideoPanel();
+    openInWindow(parsed);
+  });
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  trackPublicEvent('video_test_open', { service: parsed.service, mode: 'embedded' });
+}
+
+// Boîte de dialogue Mode Test Gameplay — mise en place une fois, indépendamment du fait que ce pack
+// l'active ou non (la balise <dialog> ne s'ouvre de toute façon que si le bouton déclencheur existe).
+(function setupVideoTestDialog() {
+  const dialog = document.getElementById('videoTestDialog');
+  const input = document.getElementById('videoTestUrlInput');
+  const errorEl = document.getElementById('videoTestError');
+  const cancelBtn = document.getElementById('videoTestCancelBtn');
+  const openBtn = document.getElementById('videoTestOpenBtn');
+  if (!dialog) return;
+  function tryOpen() {
+    const parsed = parseVideoUrl(input.value);
+    if (!parsed) {
+      errorEl.textContent = tr('invalidUrl');
+      trackPublicEvent('video_test_invalid_url', {});
+      return;
+    }
+    errorEl.textContent = '';
+    if (isMultiScreen()) { openInWindow(parsed); } else { openInPanel(parsed); }
+    dialog.close();
+    input.value = '';
+  }
+  cancelBtn.addEventListener('click', () => dialog.close());
+  openBtn.addEventListener('click', tryOpen);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryOpen(); } });
+  dialog.addEventListener('close', () => { errorEl.textContent = ''; });
+})();
+
+async function init() {
+  const container = document.getElementById('content');
+  const id = new URLSearchParams(location.search).get('id');
+  window.__lpTrackContext = { type: 'pack', id: id };
+  try {
+    const res = await fetch('./data.json?v=' + Date.now());
+    const data = await res.json();
+    const pack = (data.packs || []).find(p => p.id === id);
+    if (pack && pack.bgColor) document.documentElement.style.setProperty('--bg', pack.bgColor);
+    if (pack && pack.textColor) document.documentElement.style.setProperty('--text', pack.textColor);
+    if (pack) setupContrastToggle('contrastToggle', pack.bgColor, pack.textColor);
+    if (!pack) {
+      container.innerHTML = `<div class="empty">${tr('packNotFound')}</div>`;
+      return;
+    }
+    if (pack.watermark) {
+      const watermarkEl = document.createElement('div');
+      watermarkEl.className = 'pack-watermark';
+      watermarkEl.style.backgroundImage = `url('./images/${pack.watermark}')`;
+      document.body.prepend(watermarkEl);
+    }
+    container.innerHTML = `
+      ${pack.illustration ? `<img class="pack-illustration" src="./images/${pack.illustration}" alt="">` : `<div class="pack-illustration empty"></div>`}
+      <div class="pack-title">${escapeHtml(pack.title)}</div>
+      <div class="pack-presentation">${(pack.presentation || '').split('\n\n').map(p => `<p>${linkify(p)}</p>`).join('')}</div>
+    `;
+    const musicContainer = document.createElement('div');
+    if (pack.videoTestModeEnabled) {
+      const triggerBtn = document.createElement('button');
+      triggerBtn.type = 'button';
+      triggerBtn.className = 'video-test-trigger-btn';
+      triggerBtn.textContent = tr('videoTestTriggerBtn');
+      triggerBtn.addEventListener('click', () => document.getElementById('videoTestDialog').showModal());
+      container.appendChild(triggerBtn);
+    }
+    container.appendChild(musicContainer);
+    const libraryById = {};
+    (data.library || []).forEach(t => { t.publishedAt = data.publishedAt; libraryById[t.id] = t; });
+    const packTracks = (pack.trackIds || []).map(id => libraryById[id]).filter(Boolean);
+    renderTracksBlock(musicContainer, packTracks);
+
+    const skills = data.implementationSkills || {};
+    const skillLabels = { wwise: 'Wwise', fmod: 'FMOD', unity: 'Unity', unreal: 'Unreal' };
+    const checkedTools = Object.keys(skillLabels).filter(k => skills[k]).map(k => skillLabels[k]);
+    if (checkedTools.length) {
+      const implEl = document.createElement('div');
+      implEl.className = 'implementation-help';
+      implEl.textContent = tr('implementationHelpMessage').replace('{tools}', checkedTools.join(', '));
+      container.appendChild(implEl);
+    }
+
+    const buySection = document.createElement('div');
+    buySection.className = 'buy-section';
+    if (pack.buyable && pack.buyUrl) {
+      buySection.innerHTML = `<a class="buy-btn" href="${pack.buyUrl}" target="_blank" rel="noopener">${tr('buyBtn')}</a>`;
+    } else {
+      buySection.innerHTML = `<span class="buy-btn disabled">${tr('comingSoon')}</span><div class="buy-hint">${tr('notForSaleYet')}</div>`;
+    }
+    container.appendChild(buySection);
+
+    const credit = document.createElement('div');
+    credit.className = 'layerpitch-credit';
+    credit.textContent = tr('creditLine').replace('{title}', pack.title);
+    container.appendChild(credit);
+  } catch (e) {
+    container.innerHTML = `<div class="empty">${tr('loadError')}</div>`;
+  }
+}
+window.addEventListener('load', init);
+</script>
+</body>
+</html>
